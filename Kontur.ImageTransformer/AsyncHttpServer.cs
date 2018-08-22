@@ -1,18 +1,21 @@
 ﻿using System;
-using System.IO;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Timers;
 
 namespace Kontur.ImageTransformer
 {
-    internal class AsyncHttpServer : IDisposable
+    internal abstract class AsyncHttpServer : IDisposable
     {
         public AsyncHttpServer()
         {
             listener = new HttpListener();
+
+            System.Timers.Timer timerForPercentageCalculation = CreateTimerToCalculateProcentageOfOutOfTimeRequests();
+            timerForPercentageCalculation.Start();
         }
-        
+
         public void Start(string prefix)
         {
             lock (listener)
@@ -62,8 +65,8 @@ namespace Kontur.ImageTransformer
 
             listener.Close();
         }
-        
-        private void Listen()
+
+        protected void Listen()
         {
             while (true)
             {
@@ -72,7 +75,19 @@ namespace Kontur.ImageTransformer
                     if (listener.IsListening)
                     {
                         var context = listener.GetContext();
-                        Task.Run(() => HandleContextAsync(context));
+
+                        if (tooManyRequests)
+                        {
+                            context.Response.StatusCode = TOO_MANY_REQUESTS;
+                            context.Response.Close();
+                        }
+                        else
+                        {
+                            Task handleContextTask = Task.Run(() => HandleContext(context));
+
+                            System.Timers.Timer timer = CreateHandleContextTimer(handleContextTask, context);
+                            timer.Start();
+                        }   
                     }
                     else Thread.Sleep(0);
                 }
@@ -80,24 +95,70 @@ namespace Kontur.ImageTransformer
                 {
                     return;
                 }
-                catch (Exception error)
-                {
-                    // TODO: log errors
-                }
             }
         }
 
-        private async Task HandleContextAsync(HttpListenerContext listenerContext)
+        private System.Timers.Timer CreateTimerToCalculateProcentageOfOutOfTimeRequests()
         {
-            // TODO: implement request handling
-
-            listenerContext.Response.StatusCode = (int)HttpStatusCode.OK;
-            using (var writer = new StreamWriter(listenerContext.Response.OutputStream))
-                writer.WriteLine("Hello, world!");
+            System.Timers.Timer timerForPercentageCalculation =
+                new System.Timers.Timer(TIME_TO_CALCULATE_PERCENTAGE_OF_OUT_OF_TIME_REQUESTS);
+            timerForPercentageCalculation.Elapsed += RecalculatePercentageOfOutOfTimeRequests;
+            return timerForPercentageCalculation;
         }
 
-        private readonly HttpListener listener;
+        private void RecalculatePercentageOfOutOfTimeRequests(object obj, ElapsedEventArgs args)
+        {
+            requestsOutOfTimePerSecondInPercents =
+                (float)requestsOutOfTimePerSecond / (requestsOutOfTimePerSecond + requestCompletedPerSecond);
+            if (requestsOutOfTimePerSecondInPercents > MAX_PERCENTAGE_OF_OUT_OF_TIME_REQUEST)
+            {
+                tooManyRequests = true;
+            }
+            else
+            {
+                tooManyRequests = false;
+            }
+            requestCompletedPerSecond = 0;
+            requestsOutOfTimePerSecond = 0;
+        }
 
+        private System.Timers.Timer CreateHandleContextTimer(Task handleContextTask, HttpListenerContext context)
+        {
+            System.Timers.Timer handleContextTimer = new System.Timers.Timer(TIME_TO_HANDLE_CONTEXT);
+            handleContextTimer.Elapsed += (obj, args) =>
+            {
+                if (handleContextTask.IsCompleted)
+                {
+                    requestCompletedPerSecond++;
+                }
+                else
+                {
+                    requestsOutOfTimePerSecond++;
+                    context.Response.StatusCode = TOO_MANY_REQUESTS;
+                    context.Response.Close();
+                    handleContextTimer.Stop();
+                    handleContextTask.Dispose();
+                }
+            };
+            return handleContextTimer;
+        }
+
+        protected abstract void HandleContext(HttpListenerContext listenerContext);
+
+        private const int TIME_TO_CALCULATE_PERCENTAGE_OF_OUT_OF_TIME_REQUESTS = 1000;
+        private const int TIME_TO_HANDLE_CONTEXT = 1000;
+        private const float MAX_PERCENTAGE_OF_OUT_OF_TIME_REQUEST = 0.1f;
+
+        private const int TOO_MANY_REQUESTS = 429;
+        private const int BAD_REQUEST = 400;
+
+        private volatile int requestCompletedPerSecond;
+        private volatile int requestsOutOfTimePerSecond;
+        private float requestsOutOfTimePerSecondInPercents;
+
+        private volatile bool tooManyRequests;
+
+        private readonly HttpListener listener;
         private Thread listenerThread;
         private bool disposed;
         private volatile bool isRunning;

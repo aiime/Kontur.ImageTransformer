@@ -36,6 +36,7 @@
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="System.Drawing" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
     <Reference Include="Microsoft.CSharp" />
@@ -44,12 +45,23 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Exceptions\BadCropArgumentsException.cs" />
+    <Compile Include="Exceptions\BadImageException.cs" />
+    <Compile Include="Exceptions\CropZeroSizeException.cs" />
+    <Compile Include="Exceptions\EmptyIntersectionException.cs" />
     <Compile Include="EntryPoint.cs" />
+    <Compile Include="HttpImageExtractor.cs" />
+    <Compile Include="ImageTransformer.cs" />
+    <Compile Include="ImageTransformerServer.cs" />
+    <Compile Include="Exceptions\NoTransformNameException.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="AsyncHttpServer.cs" />
+    <Compile Include="Exceptions\UnknownTransformException.cs" />
+    <Compile Include="UrlPartsExtractor.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
   </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
